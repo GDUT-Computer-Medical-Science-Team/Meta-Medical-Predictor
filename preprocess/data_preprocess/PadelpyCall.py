@@ -7,7 +7,7 @@ from tqdm import tqdm
 from utils.DataLogger import DataLogger
 from padelpy import padeldescriptor
 
-logger = DataLogger(cfg.logger_filepath, 'Padel').getlog()
+logger = DataLogger().getlog('Padel')
 
 
 class PadelpyCall:

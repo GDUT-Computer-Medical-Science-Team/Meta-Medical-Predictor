@@ -29,7 +29,7 @@ if not os.path.exists(model_save_folder):
 
 # 公共日志对象
 logger_filepath = f"{model_save_folder}/logger.log"
-logger = DataLogger(logger_filepath, logger_name="global").getlog()
+logger = DataLogger()
 
 # 模型枚举以及当前选择的模型
 model_enum = ['XGB', 'LGBM', 'SVM', 'RF', 'MLP', 'Custom']
