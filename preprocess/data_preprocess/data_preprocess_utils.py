@@ -6,9 +6,12 @@ import numpy as np
 from deepchem import feat
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from tqdm import tqdm
+from utils.DataLogger import DataLogger
 """
     提供各种数据预处理的工具方法
 """
+
+log = DataLogger().getlog("data_preprocess_utils")
 
 
 def save_organ_data_by_names(root_filepath: str, target_filepath: str, organ_names: list, is_sd=False):
@@ -32,7 +35,8 @@ def save_organ_data_by_names(root_filepath: str, target_filepath: str, organ_nam
     else:
         raise TypeError("输入的文件并非excel类型的格式(xlsx, xls, csv)")
     df_list = []
-    for organ_name in organ_names:
+    log.info(f"准备获取指定器官数据，器官数量为:{len(organ_names)}")
+    for organ_name in tqdm(organ_names, desc="正在获取指定器官数据: "):
         if not is_sd:
             df = raw_df.loc[:, raw_df.columns.str.startswith(f'{organ_name} mean')]
         else:
@@ -40,6 +44,7 @@ def save_organ_data_by_names(root_filepath: str, target_filepath: str, organ_nam
         df_list.append(df)
     df = pd.concat(df_list, axis=1)
     df.to_csv(target_filepath, encoding='utf-8')
+    log.info(f"数据获取成功，以csv格式保存至{target_filepath}")
 
 
 def get_certain_time_organ_data(root_filepath: str, organ_name: str, certain_time: int, is_sd=False) \
