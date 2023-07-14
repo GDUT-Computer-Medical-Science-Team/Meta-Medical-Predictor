@@ -140,8 +140,8 @@ class MedicalDatasetsHandler:
             # 读取纯特征部分
             mol_Desc = mol_Desc.iloc[:, 1:]
             # 预处理数据集
-            # TODO: 修改为minmaxscaler，范围0 ~ 1
-            sc = StandardScaler()
+            # sc = StandardScaler()
+            sc = MinMaxScaler()
             mol_Desc = pd.DataFrame(sc.fit_transform(mol_Desc), columns=mol_Desc.columns)
             mol_Desc = clean_desc_dataframe(mol_Desc, drop_duplicates=False)
             organs_labels = df.iloc[:, 2:]
