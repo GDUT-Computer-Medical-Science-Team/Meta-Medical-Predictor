@@ -4,12 +4,16 @@ from torch.utils.data import TensorDataset
 from preprocess.data_preprocess.FeatureExtraction import FeatureExtraction
 from preprocess.data_preprocess.PadelpyCall import PadelpyCall
 from preprocess.data_preprocess.data_preprocess_utils import *
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.model_selection import train_test_split
+from utils.DataLogger import DataLogger
 import pandas as pd
 import numpy as np
 import torch
 import os
+import traceback
+
+log = DataLogger().getlog("MedicalDatasetsHandler")
 
 
 class MedicalDatasetsHandler:
@@ -45,19 +49,24 @@ class MedicalDatasetsHandler:
         """
         organ_data_filepath = os.path.join(self.__saving_folder, "OrganData.csv")
         self.__organ_time_data_filepath = os.path.join(self.__saving_folder, f"OrganDataAt{certain_time}min.csv")
+        log.info("准备读取原始的整合数据集，并按照提供的器官名进行筛选")
+        log.info(f"筛选的器官名为:{organ_names}")
         # 获取指定器官的全部数据
         save_organ_data_by_names(root_filepath=self.__merged_filepath,
                                  target_filepath=organ_data_filepath,
                                  organ_names=organ_names,
                                  is_sd=is_sd)
         df = pd.DataFrame()
+        log.info("完成数据集器官筛选，根据提供的时间点进行进一步筛选")
+        log.info(f"筛选的时间点为: {certain_time}min")
         # 获取每个器官对应时间的数据并整合
-        for organ_name in organ_names:
+        for organ_name in tqdm(organ_names, desc=f"正在从指定器官数据从提取{certain_time}min的数据: "):
             df = pd.concat([df, get_certain_time_organ_data(root_filepath=organ_data_filepath,
                                                             organ_name=organ_name,
                                                             certain_time=certain_time,
                                                             is_sd=is_sd)],
                            axis=1)
+        log.info(f"数据筛选完成，以csv格式保存至{self.__organ_time_data_filepath}")
         df.to_csv(self.__organ_time_data_filepath, encoding='utf-8')
 
     def transform_organ_time_data_to_tensor_dataset(self,
@@ -101,25 +110,33 @@ class MedicalDatasetsHandler:
         desc_file = os.path.join(self.__saving_folder, desc_file)
         # mordred_50_tuned_index = os.path.join(self.folder_path, 'mordred_50_tuned_index.npy')
         # mordred_100_tuned_index = os.path.join(self.folder_path, 'mordred_100_tuned_index.npy')
-
+        log.info("读取保存每种器官的特征及标签的npy文件")
         if overwrite or not os.path.exists(npy_file):
+            log.info("npy文件未找到或overwrite参数设置为True，读取筛选后的器官数据并进行数据预处理操作")
             # 读取浓度数据，并获取分子描述符
             df = pd.read_csv(self.__organ_time_data_filepath)
             # df = clean_desc_dataframe(df)
             smiles = pd.DataFrame({'SMILES': df.iloc[:, 1]})
             # 不存在保存数据特征的文件，进行特征生成
             if not os.path.exists(desc_file):
+                log.info("未找到特征文件，进行特征生成操作")
                 # 计算SMILES的描述符，然后保存到mol_Desc文件中方便再次读取
                 # TODO: 修改PadelpyCall的smi需求，要求能输入smiles
                 if FP:  # 分子指纹
+                    finger_prints = ['EState', 'MACCS', 'KlekotaRoth', 'PubChem']
+                    log.info(f"生成分子指纹: {finger_prints}")
                     pc = PadelpyCall(smi_dir="/Data/DL/Datasets/479smiles.smi")
-                    mol_Desc = pc.CalculateFP(['EState', 'MACCS', 'KlekotaRoth', 'PubChem'])
+                    mol_Desc = pc.CalculateFP(finger_prints)
                 else:  # 分子描述符
+                    log.info("生成Mordred分子描述符")
                     mol_Desc = calculate_desc(smiles)
                 mol_Desc.to_csv(desc_file, index=False)
+                log.info(f"特征生成完成，以csv格式存储至{desc_file}")
             # 存在保存数据特征的文件，直接读取
             else:
+                log.info(f"存在特征文件{desc_file}，读取数据特征")
                 mol_Desc = pd.read_csv(desc_file)
+            log.info("正在执行特征数据归一化处理")
             # 读取纯特征部分
             mol_Desc = mol_Desc.iloc[:, 1:]
             # 预处理数据集
@@ -140,9 +157,10 @@ class MedicalDatasetsHandler:
             # if os.path.exists(mordred_100_tuned_index):
             #     desc_100_idx_list = np.load(mordred_100_tuned_index).tolist()
             #     print("Length of 100 desc list: ", len(desc_100_idx_list))
-
+            log.info("进行特征筛选")
             # 处理每一种器官的浓度数据
-            for index, col in organs_labels.iteritems():
+            # print(organs_labels.shape)
+            for index, col in tqdm(organs_labels.iteritems(), desc="正在筛选特征: ", total=organs_labels.shape[1]):
                 organ_name = index.split()[0]
                 concentration_data = pd.DataFrame({'Concentration': col})
                 # concentration_data = pd.Series({'Concentration': col})
@@ -182,10 +200,13 @@ class MedicalDatasetsHandler:
                 datasets[organ_name] = organ_df
             # 保存字典
             np.save(npy_file, datasets)
+            log.info(f"全部特征筛选成功，已将数据以npy格式保存至{npy_file}")
         # 总字典存在，直接读取
         else:
+            log.info("npy文件存在，正在读取数据")
             datasets = np.load(npy_file, allow_pickle=True).item()
         # self.save_df2TensorDataset(datasets)
+        log.info("已获取各器官的筛选后特征数据及数据标签")
         return datasets
 
     def __save_df2TensorDataset(self, df_map: dict):
@@ -198,17 +219,23 @@ class MedicalDatasetsHandler:
         if not os.path.exists(torch_datasets_dir):
             os.mkdir(torch_datasets_dir)
         # 遍历每个器官的数据，分离出特征x与标签y，保存为TensorDataset
-        for organ_name, df in df_map.items():
-            # df = DataPreprocess.clean_desc_dataframe(df)
-            x = df.iloc[:, 2:]
-            y = df['Concentration']
-            if x.shape[0] != y.shape[0]:
-                raise ValueError("x and y having different counts")
-            count = y.shape[0]
-            x = torch.tensor(x.values).to(self.__device)
-            y = torch.tensor(y.values).resize_(count, 1).to(self.__device)
-            dataset = TensorDataset(x, y)
-            torch.save(dataset, os.path.join(torch_datasets_dir, f'{organ_name}_{count}_dataset.pt'))
+        for organ_name, df in tqdm(df_map.items(), desc="正在将器官数据保存为TensorDataset格式: "):
+            try:
+                # df = DataPreprocess.clean_desc_dataframe(df)
+                x = df.iloc[:, 2:]
+                y = df['Concentration']
+                if x.shape[0] != y.shape[0]:
+                    raise ValueError("x and y having different counts")
+                count = y.shape[0]
+                x = torch.tensor(x.values).to(self.__device)
+                y = torch.tensor(y.values).resize_(count, 1).to(self.__device)
+                dataset = TensorDataset(x, y)
+                torch.save(dataset, os.path.join(torch_datasets_dir, f'{organ_name}_{count}_dataset.pt'))
+            except Exception as e:
+                log.error(f"转换器官{organ_name}的数据时出现以下错误: ")
+                log.error(traceback.format_exc())
+        log.info("全部数据已成功保存为TensorDataset格式")
+
 
     def get_single_organ_tensor(self, test_size=0.1):
         x, y, _ = get_X_y_smiles(self.__organ_time_data_filepath)
