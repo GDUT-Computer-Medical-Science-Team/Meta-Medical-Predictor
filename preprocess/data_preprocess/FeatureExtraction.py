@@ -7,10 +7,11 @@ from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
 from sklearn.linear_model import LogisticRegression as LR
 from time import time
 import global_config as cfg
+from utils.DataLogger import DataLogger
 import pandas as pd
 import numpy as np
 
-logger = cfg.logger
+logger = DataLogger().getlog("FeatureExtraction")
 
 
 class FeatureExtraction:
@@ -18,7 +19,8 @@ class FeatureExtraction:
     用于筛选化合物特征（描述符）的类
     """
 
-    def __init__(self, X, y, mode='regression', VT_threshold=0.02, RFE_features_to_select=50, UFE_percentile=80):
+    def __init__(self, X, y, mode='regression', VT_threshold=0.02, RFE_features_to_select=50, UFE_percentile=80,
+                 verbose=False):
         """
         :param X: 输入的特征数据
         :param y: 输入的标签数据
@@ -26,6 +28,7 @@ class FeatureExtraction:
         :param VT_threshold: VarianceThreshold的阈值
         :param RFE_features_to_select: RFE筛选的最终特征数
         :param UFE_percentile: UFE筛选的百分比
+        :param verbose: 是否输出信息
         """
         self.X = X
         if type(y) is pd.DataFrame:
@@ -38,6 +41,7 @@ class FeatureExtraction:
         self.VT_threshold = VT_threshold
         self.RFE_features_to_select = RFE_features_to_select
         self.UFE_percentile = UFE_percentile
+        self.verbose = verbose
 
     def get_VT(self):
         # deleted all features that were either one or zero in more than 98% of samples
@@ -90,16 +94,20 @@ class FeatureExtraction:
         X = self.X
         if VT:
             X = self.get_VT().fit_transform(X, self.y)
-            logger.info(f"X shape after Variance Threshold: {X.shape}")
+            if self.verbose:
+                logger.info(f"X shape after Variance Threshold: {X.shape}")
         if TBE:
             X = self.tree_based_selection(X, self.y)
-            logger.info(f"X shape after Tree Based Selection: {X.shape}")
+            if self.verbose:
+                logger.info(f"X shape after Tree Based Selection: {X.shape}")
         if UFE:
             X = self.get_UFE().fit_transform(X, self.y)
-            logger.info(f"X shape after Select Percentile: {X.shape}")
+            if self.verbose:
+                logger.info(f"X shape after Select Percentile: {X.shape}")
         if RFE:
             X = self.get_RFE().fit_transform(X, self.y)
-            logger.info(f"X shape after Recursive Feature Elimination: {X.shape}")
+            if self.verbose:
+                logger.info(f"X shape after Recursive Feature Elimination: {X.shape}")
         if returnIndex:
             return self.get_feature_column_index(X, self.X)
         return X if isinstance(X, pd.DataFrame) else pd.DataFrame(X)
