@@ -2,12 +2,17 @@ import os.path
 import time
 import traceback
 
+import numpy as np
 import torch
+from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.model_selection import KFold
+from tqdm import tqdm
+from xgboost.sklearn import XGBRegressor
 
-from utils.DataLogger import DataLogger
-from preprocess.MedicalDatasetsHandler import MedicalDatasetsHandler
-from model.MetaLearningModel import MetaLearningModel
 import utils.datasets_loader as loader
+from model.MetaLearningModel import MetaLearningModel
+from preprocess.MedicalDatasetsHandler import MedicalDatasetsHandler
+from utils.DataLogger import DataLogger
 
 log = DataLogger().getlog("run")
 
@@ -57,7 +62,7 @@ def check_data_exist(merge_filepath, organ_names_list, certain_time, train_dir_p
         log.info(f"数据获取完成")
 
 
-if __name__ == '__main__':
+def train_meta_model():
     merge_filepath = "data\\数据表汇总.xlsx"
     organ_names_list = ['blood', 'bone', 'brain', 'fat', 'heart',
                         'intestine', 'kidney', 'liver', 'lung', 'muscle',
@@ -74,8 +79,8 @@ if __name__ == '__main__':
     eval_batch_size = 16
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = MetaLearningModel(model_lr=0.0002,
-                              maml_lr=0.01,
+    model = MetaLearningModel(model_lr=0.005,
+                              maml_lr=0.05,
                               dropout_rate=0.1,
                               adaptation_steps=8,
                               hidden_size=128,
@@ -95,3 +100,57 @@ if __name__ == '__main__':
     # 模型训练与验证
     model.train(support_dataloader, query_dataloader)
     model.pred(test_dataloader)
+
+
+def train_xgboost():
+    organ_name = 'blood'
+    X, y = loader.get_sklearn_data('data/train/train_organ_df.npy', organ_name)
+    X_test, y_test = loader.get_sklearn_data('data/test/test_organ_df.npy', organ_name)
+
+    blood_params = {
+        'n_estimators': 1700,
+        'learning_rate': 0.026,
+        'max_depth': 26,
+        'lambda': 0.0022106369528429484,
+        'alpha': 0.9133162515639958,
+        'min_child_weight': 18,
+        'gamma': 9,
+        'colsample_bytree': 0.9,
+        'colsample_bylevel': 0.6,
+        'colsample_bynode': 0.3,
+    }
+
+    xgb = XGBRegressor(**blood_params)
+    cv_times = 10
+    cv = KFold(n_splits=cv_times, shuffle=True)
+    log.info(f"使用XGBoost模型进行{cv_times}次交叉验证")
+    r2_scores = np.empty(cv_times)
+    rmse_scores = np.empty(cv_times)
+
+    for idx, (train_idx, val_idx) in tqdm(enumerate(cv.split(X, y)), desc="交叉验证: ", total=cv_times):
+        X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+        y_train, y_val = y[train_idx], y[val_idx]
+
+        xgb.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=100, verbose=False)
+        preds = xgb.predict(X_val)
+
+        r2 = r2_score(y_val, preds)
+        r2_scores[idx] = r2
+
+        rmse = np.sqrt(mean_squared_error(y_val, preds))
+        rmse_scores[idx] = rmse
+    log.info("交叉验证训练结果：")
+    log.info(f"R2: {np.mean(r2_scores)}")
+    log.info(f"RMSE: {np.mean(rmse_scores)}")
+
+    preds = xgb.predict(X_test)
+    test_r2 = r2_score(y_test, preds)
+    test_rmse = np.sqrt(mean_squared_error(y_test, preds))
+    log.info("测试集测试结果:")
+    log.info(f"R2: {test_r2}")
+    log.info(f"RMSE: {test_rmse}")
+
+
+if __name__ == '__main__':
+    # train_meta_model()
+    train_xgboost()
