@@ -45,10 +45,10 @@ if __name__ == '__main__':
     target_organ = "blood"
     mlm = MetaLearningModel(datasets_dir,
                             target_organ,
-                            model_lr=0.005,
-                            maml_lr=0.01,
+                            model_lr=0.002,
+                            maml_lr=0.02,
                             support_batch_size=32,
-                            query_batch_size=16,
+                            query_batch_size=32,
                             adaptation_steps=5,
                             hidden_size=256,
                             cuda=True)

@@ -8,7 +8,7 @@ import numpy as np
 from torch import nn
 from learn2learn.data import MetaDataset
 from torch.utils.data import ConcatDataset, DataLoader
-from model.MetaRegressionModel import RegressionModel
+from model.RegressionModel import RegressionModel
 from learn2learn.algorithms import MAML
 
 from preprocess.MedicalDatasetsHandler import MedicalDatasetsHandler
