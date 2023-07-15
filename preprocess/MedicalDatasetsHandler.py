@@ -82,7 +82,7 @@ class MedicalDatasetsHandler:
             log.info(f"存在已完成时间点筛选的csv文件: {self.__organ_time_data_filepath}，跳过时间点筛选步骤")
 
     def transform_organ_time_data_to_tensor_dataset(self,
-                                                    test_size=0.0,
+                                                    test_size=0.2,
                                                     external=False,
                                                     FP=False,
                                                     overwrite=False):
@@ -100,7 +100,7 @@ class MedicalDatasetsHandler:
         npy_file_path = self.__transform_organs_data(FP=FP,
                                                      double_index=double_index,
                                                      overwrite=overwrite)
-        self.__split_df2TensorDataset(npy_file_path)
+        self.__split_df2TensorDataset(npy_file_path, test_size=test_size)
 
     def __transform_organs_data(self,
                                 desc_file='descriptors.csv',
@@ -300,22 +300,22 @@ class MedicalDatasetsHandler:
                 log.error(traceback.format_exc())
         log.info("全部数据已成功转换为TensorDataset格式")
 
-    def get_single_organ_tensor(self, test_size=0.1):
-        x, y, _ = get_X_y_smiles(self.__organ_time_data_filepath)
-        sc = StandardScaler()
-        x = pd.DataFrame(sc.fit_transform(x))
-
-        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=test_size)
-        sample_num, self.desc_num = x.shape[0], x.shape[1]
-
-        # Prepare your data as PyTorch tensors
-        x_train, y_train = torch.Tensor(x_train.values).to(self.__device), \
-            torch.Tensor(y_train.values).resize_(y_train.shape[0], 1).to(self.__device)
-        x_test, y_test = torch.Tensor(x_test.values).to(self.__device), \
-            torch.Tensor(y_test.values).resize_(y_test.shape[0], 1).to(self.__device)
-
-        # Create PyTorch datasets
-        train_dataset = TensorDataset(x_train, y_train)
-        test_dataset = TensorDataset(x_test, y_test)
-
-        return train_dataset, test_dataset
+    # def get_single_organ_tensor(self, test_size=0.1):
+    #     x, y, _ = get_X_y_smiles(self.__organ_time_data_filepath)
+    #     sc = StandardScaler()
+    #     x = pd.DataFrame(sc.fit_transform(x))
+    #
+    #     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=test_size)
+    #     sample_num, self.desc_num = x.shape[0], x.shape[1]
+    #
+    #     # Prepare your data as PyTorch tensors
+    #     x_train, y_train = torch.Tensor(x_train.values).to(self.__device), \
+    #         torch.Tensor(y_train.values).resize_(y_train.shape[0], 1).to(self.__device)
+    #     x_test, y_test = torch.Tensor(x_test.values).to(self.__device), \
+    #         torch.Tensor(y_test.values).resize_(y_test.shape[0], 1).to(self.__device)
+    #
+    #     # Create PyTorch datasets
+    #     train_dataset = TensorDataset(x_train, y_train)
+    #     test_dataset = TensorDataset(x_test, y_test)
+    #
+    #     return train_dataset, test_dataset
