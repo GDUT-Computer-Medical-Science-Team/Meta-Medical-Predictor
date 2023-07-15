@@ -17,85 +17,96 @@ log = DataLogger().getlog("MedicalDatasetsHandler")
 
 
 class MedicalDatasetsHandler:
-    def __init__(self, merged_filepath, saving_folder=None):
+    def __init__(self):
         """
         用于读取原始的整合浓度数据并处理成可输入到模型的Dataset
 
-        :param merged_filepath: 原始的整合数据集
-        :param saving_folder: 用于存储各项数据的目录
         """
-        self.__merged_filepath = merged_filepath
+        self.__merged_filepath = None
         self.__organ_time_data_filepath = None
-
-        if saving_folder is not None:
-            self.__saving_folder = saving_folder
-        else:
-            if self.__merged_filepath is not None and len(self.__merged_filepath) > 0:
-                self.__saving_folder = os.path.split(self.__merged_filepath)[0]
-            else:
-                raise ValueError("参数merged_filepath错误")
+        self.__saving_folder = None
 
         self.__device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.desc_num = 0
         self.__feature_select_number = 50
         self.__output_filename = None
 
-    def read_merged_datafile(self, organ_names: list, certain_time: int, is_sd=False):
+    def read_merged_datafile(self,
+                             merged_filepath,
+                             organ_names: list,
+                             certain_time: int,
+                             overwrite=False,
+                             is_sd=False):
         """
         读取原始的整合数据集，选定器官和时间进行筛选并保存
+        :param merged_filepath: 整合数据集路径
         :param organ_names: 器官名列表
         :param certain_time: 指定的时间，单位为分钟
+        :param overwrite: 是否启用覆盖模式
         :param is_sd: 是否取方差值(sd)，默认为False，即只取平均值(mean)
         """
+        self.__merged_filepath = merged_filepath
+        # 默认保存目录为原始整合文件所在的根目录
+        if self.__merged_filepath is not None and len(self.__merged_filepath) > 0:
+            self.__saving_folder = os.path.split(self.__merged_filepath)[0]
+        else:
+            raise ValueError("参数merged_filepath错误")
+
         organ_data_filepath = os.path.join(self.__saving_folder, "OrganData.csv")
         self.__organ_time_data_filepath = os.path.join(self.__saving_folder, f"OrganDataAt{certain_time}min.csv")
-        log.info("准备读取原始的整合数据集，并按照提供的器官名进行筛选")
-        log.info(f"筛选的器官名为:{organ_names}")
+        log.info("准备读取原始的整合数据集，并按照提供的器官名和时间点进行筛选")
+
         # 获取指定器官的全部数据
-        save_organ_data_by_names(root_filepath=self.__merged_filepath,
-                                 target_filepath=organ_data_filepath,
-                                 organ_names=organ_names,
-                                 is_sd=is_sd)
-        df = pd.DataFrame()
-        log.info("完成数据集器官筛选，根据提供的时间点进行进一步筛选")
-        log.info(f"筛选的时间点为: {certain_time}min")
-        # 获取每个器官对应时间的数据并整合
-        for organ_name in tqdm(organ_names, desc=f"正在从指定器官数据从提取{certain_time}min的数据: "):
-            df = pd.concat([df, get_certain_time_organ_data(root_filepath=organ_data_filepath,
-                                                            organ_name=organ_name,
-                                                            certain_time=certain_time,
-                                                            is_sd=is_sd)],
-                           axis=1)
-        log.info(f"数据筛选完成，以csv格式保存至{self.__organ_time_data_filepath}")
-        df.to_csv(self.__organ_time_data_filepath, encoding='utf-8')
+        if overwrite or not os.path.exists(organ_data_filepath):
+            log.info(f"正在按照提供的器官名: {organ_names} 进行筛选: ")
+            save_organ_data_by_names(root_filepath=self.__merged_filepath,
+                                     target_filepath=organ_data_filepath,
+                                     organ_names=organ_names,
+                                     is_sd=is_sd)
+        else:
+            log.info(f"存在已完成器官名筛选的csv文件: {organ_data_filepath}，跳过器官名筛选步骤")
+        # 获取指定时间点的全部数据
+        if overwrite or not os.path.exists(self.__organ_time_data_filepath):
+            df = pd.DataFrame()
+            log.info(f"正在按照提供的时间点进行进一步筛选，筛选的时间点为: {certain_time}min")
+            # 获取每个器官对应时间的数据并整合
+            for organ_name in tqdm(organ_names, desc=f"正在从指定器官数据从提取{certain_time}min的数据: "):
+                df = pd.concat([df, get_certain_time_organ_data(root_filepath=organ_data_filepath,
+                                                                organ_name=organ_name,
+                                                                certain_time=certain_time,
+                                                                is_sd=is_sd)],
+                               axis=1)
+            log.info(f"数据筛选完成，以csv格式保存至{self.__organ_time_data_filepath}")
+            df.to_csv(self.__organ_time_data_filepath, encoding='utf-8')
+        else:
+            log.info(f"存在已完成时间点筛选的csv文件: {self.__organ_time_data_filepath}，跳过时间点筛选步骤")
 
     def transform_organ_time_data_to_tensor_dataset(self,
+                                                    test_size=0.0,
                                                     external=False,
                                                     FP=False,
                                                     overwrite=False):
         """
-        读取csv浓度数据文件，并处理成TensorDataset数据集
+        读取csv浓度数据文件，进行数据预处理，并进行训练集、测试集分割，最后保存为TensorDataset数据集
+        :param test_size: 测试集大小，范围为[0.0, 1.0)
         :param external: 是否是外部训练集
         :param FP: 是否计算分子指纹
         :param overwrite: 是否覆盖现有的npy文件
         """
-        # base_dir = "D:\\ML\\Medical Data Process\\Data\\DL"
-        # # 选择训练集或外部数据集
-        # if not external:
-        #     save_path = os.path.join(base_dir, "Datasets")
-        # else:
-        #     save_path = os.path.join(base_dir, "ExternalDatasets")
-        # organ_data_file = os.path.join(save_path, concentration_csv_file)
-        # md = MedicalDatasetsHandler(organ_data_file, save_path)
         # 若为验证集则double_index为false，即验证集只需要正常一半的特征
         double_index = not external
-        map = self.__transform_organs_data(# desc_file=self.__organ_data_filepath,
-                                         FP=FP,
-                                         double_index=double_index,
-                                         overwrite=overwrite)
-        self.__save_df2TensorDataset(map)
+        if test_size < 0.0 or test_size >= 1.0:
+            raise ValueError("参数test_size超过范围[0.0, 1.0)")
+        npy_file_path = self.__transform_organs_data(FP=FP,
+                                                     double_index=double_index,
+                                                     overwrite=overwrite)
+        self.__split_df2TensorDataset(npy_file_path)
 
-    def __transform_organs_data(self, desc_file='descriptors.csv', FP=False, double_index=True, overwrite=False):
+    def __transform_organs_data(self,
+                                desc_file='descriptors.csv',
+                                FP=False,
+                                double_index=True,
+                                overwrite=False) -> str:
         """
         读取保存全部器官浓度数据的csv文件，根据化合物SMILES计算数据特征，筛选数据特征
         以器官名为key、浓度数据为value包装到字典中，并保存到npy文件中
@@ -103,10 +114,10 @@ class MedicalDatasetsHandler:
         :param FP: 是否启动分子指纹处理
         :param double_index: 是否读取双倍的特征索引
         :param overwrite: 是否覆盖已有的npy文件
-        :return: 保存所有器官及其df的字典
+        :return: 保存所有器官及其df的总字典文件路径
         """
         # 路径初始化
-        npy_file = os.path.join(self.__saving_folder, 'multi_organ.npy')
+        npy_file = os.path.join(self.__saving_folder, 'organ_df.npy')
         desc_file = os.path.join(self.__saving_folder, desc_file)
         # mordred_50_tuned_index = os.path.join(self.folder_path, 'mordred_50_tuned_index.npy')
         # mordred_100_tuned_index = os.path.join(self.folder_path, 'mordred_100_tuned_index.npy')
@@ -201,25 +212,78 @@ class MedicalDatasetsHandler:
             # 保存字典
             np.save(npy_file, datasets)
             log.info(f"全部特征筛选成功，已将数据以npy格式保存至{npy_file}")
+            return npy_file
         # 总字典存在，直接读取
         else:
-            log.info("npy文件存在，正在读取数据")
-            datasets = np.load(npy_file, allow_pickle=True).item()
+            log.info("npy文件存在")
+            # datasets = np.load(npy_file, allow_pickle=True).item()
+            return npy_file
         # self.save_df2TensorDataset(datasets)
-        log.info("已获取各器官的筛选后特征数据及数据标签")
-        return datasets
+        # log.info("已获取各器官的筛选后特征数据及数据标签")
+        # return datasets
 
-    def __save_df2TensorDataset(self, df_map: dict):
+    def __split_df2TensorDataset(self, npy_file_path: str, test_size=0.2):
         """
         将字典内的器官数据分别转换成对应的TensorDataset，并保存到saving_folder中
-        :param df_map: 输入的字典数据
+        :param npy_file_path: 保存器官与df数据的字典文件路径
         """
-        # 保存torch_datasets的次级目录
-        torch_datasets_dir = os.path.join(self.__saving_folder, 'torch_datasets')
-        if not os.path.exists(torch_datasets_dir):
-            os.mkdir(torch_datasets_dir)
+        """
+        1. 读取npy文件，分割成train和test后创建对应的目录并保存对应的npy
+        2. 分别读取对应的npy文件，转换数据为TensorDataset并保存在train和test的datasets目录里
+        """
+        if npy_file_path is None or len(npy_file_path) == 0:
+            raise ValueError("参数npy_file_path错误")
+        if not os.path.exists(npy_file_path):
+            raise FileNotFoundError(f"文件 {npy_file_path} 不存在")
+        if test_size < 0.0 or test_size > 1.0:
+            raise ValueError("参数test_size超过范围[0.0, 1.0)")
+
+        # 保存数据的次级目录
+        train_dir = os.path.join(self.__saving_folder, 'train')
+        if not os.path.exists(train_dir):
+            os.mkdir(train_dir)
+        train_datasets_dir = os.path.join(train_dir, 'datasets')
+        if not os.path.exists(train_datasets_dir):
+            os.mkdir(train_datasets_dir)
+
+        test_dir = os.path.join(self.__saving_folder, 'test')
+        if not os.path.exists(test_dir):
+            os.mkdir(test_dir)
+        test_datasets_dir = os.path.join(test_dir, 'datasets')
+        if not os.path.exists(test_datasets_dir):
+            os.mkdir(test_datasets_dir)
+        # 保存分割后的数据字典
+        train_data_dict = dict()
+        test_data_dict = dict()
+
+        log.info("读取器官数据总字典npy文件")
+        main_df_map = np.load(npy_file_path, allow_pickle=True).item()
+        # 将每个器官都按照test_size分割，并存储到对应的字典中等待保存及处理
+        for organ_name, df in tqdm(main_df_map.items(), desc="正在将器官数据进行Train Test切分: "):
+            train, test = train_test_split(df, test_size=test_size)
+            train_data_dict[organ_name] = train
+            test_data_dict[organ_name] = test
+        log.info("切分完成，将数据保存为对应的npy文件")
+        # 保存到npy文件中
+        train_data_npy = os.path.join(train_dir, 'train_organ_df.npy')
+        test_data_npy = os.path.join(test_dir, 'test_organ_df.npy')
+        np.save(train_data_npy, train_data_dict)
+        np.save(test_data_npy, test_data_dict)
+        log.info("保存完成")
+        # 读取npy文件，转换成TensorDataset
+        self.__df2TensorDataset(train_data_npy, train_datasets_dir)
+        self.__df2TensorDataset(test_data_npy, test_datasets_dir)
+
+    def __df2TensorDataset(self, npy_file: str, torch_datasets_dir: str):
+
+        """
+        1. 读取npy文件数据
+        2. 遍历数据，存储到对应目录中
+        """
+        log.info("读取对应的npy文件并转换数据为TensorDataset格式")
+        df_map = np.load(npy_file, allow_pickle=True).item()
         # 遍历每个器官的数据，分离出特征x与标签y，保存为TensorDataset
-        for organ_name, df in tqdm(df_map.items(), desc="正在将器官数据保存为TensorDataset格式: "):
+        for organ_name, df in tqdm(df_map.items(), desc="正在将器官数据转换为TensorDataset格式: "):
             try:
                 # df = DataPreprocess.clean_desc_dataframe(df)
                 x = df.iloc[:, 2:]
@@ -232,10 +296,9 @@ class MedicalDatasetsHandler:
                 dataset = TensorDataset(x, y)
                 torch.save(dataset, os.path.join(torch_datasets_dir, f'{organ_name}_{count}_dataset.pt'))
             except Exception as e:
-                log.error(f"转换器官{organ_name}的数据时出现以下错误: ")
+                log.error(f"转换器官 {organ_name} 的数据时出现以下错误: ")
                 log.error(traceback.format_exc())
-        log.info("全部数据已成功保存为TensorDataset格式")
-
+        log.info("全部数据已成功转换为TensorDataset格式")
 
     def get_single_organ_tensor(self, test_size=0.1):
         x, y, _ = get_X_y_smiles(self.__organ_time_data_filepath)
