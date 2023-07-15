@@ -1,4 +1,5 @@
 import os.path
+import time
 import traceback
 
 import torch
@@ -68,17 +69,18 @@ if __name__ == '__main__':
     # 检查TensorDatasets数据是否存在
     check_data_exist(merge_filepath, organ_names_list, certain_time, train_datasets_dir, test_datasets_dir)
 
-    support_batch_size = 64
+    support_batch_size = 32
     query_batch_size = 16
     eval_batch_size = 16
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = MetaLearningModel(model_lr=0.001,
+    model = MetaLearningModel(model_lr=0.0002,
                               maml_lr=0.01,
                               dropout_rate=0.1,
-                              adaptation_steps=3,
+                              adaptation_steps=8,
                               hidden_size=128,
-                              device=device)
+                              device=device,
+                              seed=int(time.time()))
     # 获取支持集和查询集
     support_dataloader, query_dataloader = loader.get_train_datasets(train_datasets_dir,
                                                                      target_organ,
