@@ -88,8 +88,8 @@ class FeatureExtraction:
         :param TBE: 是否启用TBE方法
         :param UFE: 是否启用UFE方法
         :param RFE: 是否启用RFE方法
-        :param returnIndex:
-        :return: 完成筛选的特征表格或者列索引
+        :param returnIndex: 返回筛选完成的列索引而不是数据
+        :return: 完成筛选的特征数据或者列索引
         """
         X = self.X
         if VT:

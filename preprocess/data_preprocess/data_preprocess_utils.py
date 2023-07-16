@@ -1,3 +1,5 @@
+import traceback
+
 import pandas
 
 import global_config as cfg
@@ -154,7 +156,11 @@ def calculate_desc(datasrc, Mordred=True, MACCS=False, ECFP=False):
         featurizer = feat.MordredDescriptors(ignore_3D=True)
         X1 = []
         for smiles in tqdm(SMILES, desc="正在计算Mordred描述符: "):
-            X1.append(featurizer.featurize(smiles)[0])
+            try:
+                X1.append(featurizer.featurize(smiles)[0])
+            except RuntimeWarning as e:
+                log.error(f"化合物 {smiles} 计算Mordred描述符出现运行时警告: ")
+                log.error(traceback.format_exc())
         X1 = pd.DataFrame(data=X1)
         X = pd.concat([X, X1], axis=1)
     # MACCS

@@ -30,20 +30,18 @@ def check_datasets_exist(parent_folder: str):
     return flag
 
 
-def check_data_exist(merge_filepath, organ_names_list, certain_time, train_dir_path, test_dir_path):
+def check_data_exist(merge_filepath, organ_names_list, certain_time, train_dir_path, test_dir_path, overwrite=False):
     """
     检查是否有数据，无数据则重新生成数据
     :return:
     """
     try:
-        # train_dir_path = "\\data\\train\\datasets"
-        # test_dir_path = "\\data\\test\\datasets"
         flag = check_datasets_exist(train_dir_path) and check_datasets_exist(test_dir_path)
     except NotADirectoryError as e:
         log.error(traceback.format_exc())
         flag = False
 
-    if flag:
+    if not overwrite and flag:
         log.info(f"存在TensorDatasets数据，无须进行数据获取操作")
     else:
         log.info(f"不存在TensorDatasets数据，开始进行数据获取操作")
@@ -57,8 +55,10 @@ def check_data_exist(merge_filepath, organ_names_list, certain_time, train_dir_p
 
         md.read_merged_datafile(merged_filepath=merge_filepath,
                                 organ_names=organ_names_list,
-                                certain_time=certain_time)
-        md.transform_organ_time_data_to_tensor_dataset()
+                                certain_time=certain_time,
+                                overwrite=overwrite)
+        md.transform_organ_time_data_to_tensor_dataset(test_size=0.1,
+                                                       overwrite=overwrite)
         log.info(f"数据获取完成")
 
 
@@ -71,18 +71,19 @@ def train_meta_model():
     train_datasets_dir = "data/train/datasets"
     test_datasets_dir = "data/test/datasets"
     target_organ = "brain"
+    overwrite = False
     # 检查TensorDatasets数据是否存在
-    check_data_exist(merge_filepath, organ_names_list, certain_time, train_datasets_dir, test_datasets_dir)
+    check_data_exist(merge_filepath, organ_names_list, certain_time, train_datasets_dir, test_datasets_dir, overwrite)
 
     support_batch_size = 32
     query_batch_size = 16
     eval_batch_size = 16
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = MetaLearningModel(model_lr=0.005,
-                              maml_lr=0.05,
-                              dropout_rate=0.1,
-                              adaptation_steps=8,
+    model = MetaLearningModel(model_lr=0.0002,
+                              maml_lr=0.01,
+                              dropout_rate=0.7,
+                              adaptation_steps=5,
                               hidden_size=128,
                               device=device,
                               seed=int(time.time()))
@@ -152,5 +153,5 @@ def train_xgboost():
 
 
 if __name__ == '__main__':
-    # train_meta_model()
-    train_xgboost()
+    train_meta_model()
+    # train_xgboost()

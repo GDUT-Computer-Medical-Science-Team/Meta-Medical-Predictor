@@ -129,7 +129,7 @@ class MedicalDatasetsHandler:
             # df = clean_desc_dataframe(df)
             smiles = pd.DataFrame({'SMILES': df.iloc[:, 1]})
             # 不存在保存数据特征的文件，进行特征生成
-            if not os.path.exists(desc_file):
+            if overwrite or not os.path.exists(desc_file):
                 log.info("未找到特征文件，进行特征生成操作")
                 # 计算SMILES的描述符，然后保存到mol_Desc文件中方便再次读取
                 # TODO: 修改PadelpyCall的smi需求，要求能输入smiles
@@ -141,7 +141,7 @@ class MedicalDatasetsHandler:
                 else:  # 分子描述符
                     log.info("生成Mordred分子描述符")
                     mol_Desc = calculate_desc(smiles)
-                mol_Desc.to_csv(desc_file, index=False)
+                mol_Desc.to_csv(desc_file, index=False, encoding='utf-8')
                 log.info(f"特征生成完成，以csv格式存储至{desc_file}")
             # 存在保存数据特征的文件，直接读取
             else:
@@ -190,13 +190,15 @@ class MedicalDatasetsHandler:
                     x = mol_Desc.loc[:, desc_50_idx_list]
                 # 保存100个筛选特征索引
                 else:
-                    desc_100_idx_list = FeatureExtraction(mol_Desc,
-                                                          concentration_data.fillna(value=0),
-                                                          RFE_features_to_select=self.__feature_select_number * 2) \
-                        .feature_extraction(TBE=True, returnIndex=True)
-                    # print("Length of 100 desc list: ", len(desc_100_idx_list))
-                    # np.save(mordred_100_tuned_index, desc_100_idx_list)
-                    x = mol_Desc.loc[:, desc_100_idx_list]
+                    # desc_100_idx_list = FeatureExtraction(mol_Desc,
+                    #                                       concentration_data.fillna(value=0),
+                    #                                       RFE_features_to_select=self.__feature_select_number * 2) \
+                    #     .feature_extraction(TBE=True, returnIndex=True)
+                    # x = mol_Desc.loc[:, desc_100_idx_list]
+                    x = FeatureExtraction(mol_Desc,
+                                          concentration_data.fillna(value=0),
+                                          RFE_features_to_select=self.__feature_select_number * 2) \
+                        .feature_extraction(TBE=True, returnIndex=False)
                 # if double_index:
                 #     x = mol_Desc.loc[:, desc_100_idx_list]
                 # else:
@@ -222,7 +224,7 @@ class MedicalDatasetsHandler:
         # log.info("已获取各器官的筛选后特征数据及数据标签")
         # return datasets
 
-    def __split_df2TensorDataset(self, npy_file_path: str, test_size=0.2):
+    def __split_df2TensorDataset(self, npy_file_path: str, test_size=0.2, overwrite=False):
         """
         将字典内的器官数据分别转换成对应的TensorDataset，并保存到saving_folder中
         :param npy_file_path: 保存器官与df数据的字典文件路径
@@ -271,15 +273,21 @@ class MedicalDatasetsHandler:
         np.save(test_data_npy, test_data_dict)
         log.info("保存完成")
         # 读取npy文件，转换成TensorDataset
-        self.__df2TensorDataset(train_data_npy, train_datasets_dir)
-        self.__df2TensorDataset(test_data_npy, test_datasets_dir)
+        self.__df2TensorDataset(train_data_npy, train_datasets_dir, overwrite=overwrite)
+        self.__df2TensorDataset(test_data_npy, test_datasets_dir, overwrite=overwrite)
 
-    def __df2TensorDataset(self, npy_file: str, torch_datasets_dir: str):
+    def __df2TensorDataset(self, npy_file: str, torch_datasets_dir: str, overwrite=False):
 
         """
         1. 读取npy文件数据
         2. 遍历数据，存储到对应目录中
         """
+        # 删除目录下的所有.pt文件
+        if overwrite:
+            log.info("启用覆盖模式，删除目录内的pt文件")
+            for file in os.listdir(torch_datasets_dir):
+                if file.endswith('.pt'):
+                    os.remove(file)
         log.info("读取对应的npy文件并转换数据为TensorDataset格式")
         df_map = np.load(npy_file, allow_pickle=True).item()
         # 遍历每个器官的数据，分离出特征x与标签y，保存为TensorDataset
