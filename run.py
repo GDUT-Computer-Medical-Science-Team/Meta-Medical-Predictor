@@ -75,16 +75,17 @@ def train_meta_model():
     # 检查TensorDatasets数据是否存在
     check_data_exist(merge_filepath, organ_names_list, certain_time, train_datasets_dir, test_datasets_dir, overwrite)
 
-    support_batch_size = 32
-    query_batch_size = 16
-    eval_batch_size = 16
+    support_batch_size = 128
+    query_batch_size = 32
+    eval_batch_size = 1
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = MetaLearningModel(model_lr=0.0002,
-                              maml_lr=0.01,
-                              dropout_rate=0.7,
-                              adaptation_steps=5,
-                              hidden_size=128,
+    model = MetaLearningModel(model_lr=0.0005,
+                              maml_lr=0.03,
+                              dropout_rate=0.3,
+                              input_size=100,
+                              adaptation_steps=10,
+                              hidden_size=64,
                               device=device,
                               seed=int(time.time()))
     # 获取支持集和查询集
