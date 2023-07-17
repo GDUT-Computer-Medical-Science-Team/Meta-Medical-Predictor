@@ -58,7 +58,7 @@ class DataLogger(object):
             self.log_file = log_file
         # 设置文件日志输出格式
         if self.log_file is not None:
-            file_handler = logging.FileHandler(log_file, 'a', encoding='utf-8')
+            file_handler = logging.FileHandler(self.log_file, 'a', encoding='utf-8')
             file_handler.setLevel(self.file_level)
             file_handler.setFormatter(self.formatter)
             logger.addHandler(file_handler)
