@@ -117,9 +117,8 @@ class MedicalDatasetsHandler:
         # 路径初始化
         npy_file = os.path.join(self.__saving_folder, 'organ_df.npy')
         desc_file = os.path.join(self.__saving_folder, desc_file)
-        # mordred_50_tuned_index = os.path.join(self.folder_path, 'mordred_50_tuned_index.npy')
-        # mordred_100_tuned_index = os.path.join(self.folder_path, 'mordred_100_tuned_index.npy')
         log.info("读取保存每种器官的特征及标签的npy文件")
+
         if overwrite or not os.path.exists(npy_file):
             log.info("npy文件未找到或overwrite参数设置为True，读取筛选后的器官数据并进行数据预处理操作")
             # 读取浓度数据，并获取分子描述符
@@ -130,7 +129,7 @@ class MedicalDatasetsHandler:
             if overwrite or not os.path.exists(desc_file):
                 log.info("未找到特征文件，进行特征生成操作")
                 # 计算SMILES的描述符，然后保存到mol_Desc文件中方便再次读取
-                if FP:  # 分子指纹
+                if FP:  # 计算分子指纹
                     finger_prints = ['EState', 'MACCS', 'KlekotaRoth', 'PubChem']
                     log.info(f"生成分子指纹: {finger_prints}")
                     smiles_smi = os.path.join(self.__saving_folder, "smiles.smi")
@@ -141,9 +140,9 @@ class MedicalDatasetsHandler:
                     fp_xml_dir = "preprocess/data_preprocess/fingerprints_xml/*.xml"
                     pc = PadelpyCall(save_dir=self.__saving_folder, smi_filename=smiles_smi, fp_xml_dir=fp_xml_dir)
                     mol_Desc = pc.CalculateFP(finger_prints, overwrite=False)
-                else:  # 分子描述符
+                else:  # 计算分子描述符
                     log.info("生成Mordred分子描述符")
-                    mol_Desc = calculate_desc(smiles)
+                    mol_Desc = calculate_Mordred_desc(smiles)
                 mol_Desc.to_csv(desc_file, index=False, encoding='utf-8')
                 log.info(f"特征生成完成，以csv格式存储至{desc_file}")
             # 存在保存数据特征的文件，直接读取
@@ -171,7 +170,7 @@ class MedicalDatasetsHandler:
                 # 去除异常值，将最多占数据集4%的异常值置为0
                 from sklearn.covariance import EllipticEnvelope
                 try:
-                    predictions1 = EllipticEnvelope(contamination=0.04, support_fraction=1)\
+                    predictions1 = EllipticEnvelope(contamination=0.04, support_fraction=1) \
                         .fit_predict(concentration_data.fillna(value=0))
                     predictions1 = (predictions1 == 1)
                     concentration_data.loc[~predictions1] = np.nan
@@ -183,12 +182,10 @@ class MedicalDatasetsHandler:
                     进行特征筛选，获得50个或者100个特征
                 """
                 if not double_index:
-                    desc_50_idx_list = FeatureExtraction(mol_Desc,
-                                                         concentration_data.fillna(value=0),
-                                                         RFE_features_to_select=self.__feature_select_number). \
-                        feature_extraction(TBE=True, returnIndex=True)
-                    x = mol_Desc.loc[:, desc_50_idx_list]
-                # 保存100个筛选特征索引
+                    x = FeatureExtraction(mol_Desc,
+                                          concentration_data.fillna(value=0),
+                                          RFE_features_to_select=self.__feature_select_number)\
+                        .feature_extraction(TBE=True, returnIndex=False)
                 else:
                     x = FeatureExtraction(mol_Desc,
                                           concentration_data.fillna(value=0),

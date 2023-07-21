@@ -129,13 +129,10 @@ def save_max_organ_data(root_filepath: str, target_filepath: str, organ_name: st
 
 
 # TODO: 将分子指纹的计算方法改为用PadelpyCall方法
-def calculate_desc(datasrc, Mordred=True, MACCS=False, ECFP=False):
+def calculate_Mordred_desc(datasrc):
     """
     从datasrc中的SMILES计算描述符并返回带描述符的datasrc数据
     :param datasrc: 需要计算的带SMILES的数据源，类型为str（指向数据源的csv文件）或者Dataframe或Series
-    :param Mordred: 启动Mordred描述符计算
-    :param MACCS: 启动MACCS分子指纹计算
-    :param ECFP: 启动ECFP分子指纹计算
     :return: 带描述符的datasrc数据
     """
     if isinstance(datasrc, str):
@@ -151,34 +148,20 @@ def calculate_desc(datasrc, Mordred=True, MACCS=False, ECFP=False):
         SMILES = df
 
     X = pd.DataFrame()
-    # Mordred
-    if Mordred:
-        featurizer = feat.MordredDescriptors(ignore_3D=True)
-        X1 = []
-        for smiles in tqdm(SMILES, desc="正在计算Mordred描述符: "):
-            try:
-                X1.append(featurizer.featurize(smiles)[0])
-            except RuntimeWarning as e:
-                log.error(f"化合物 {smiles} 计算Mordred描述符出现运行时警告: ")
-                log.error(traceback.format_exc())
-        X1 = pd.DataFrame(data=X1)
-        X = pd.concat([X, X1], axis=1)
-    # MACCS
-    if MACCS:
-        X2 = []
-        featurizer = feat.MACCSKeysFingerprint()
-        for smiles in tqdm(SMILES, desc="正在计算MACCS描述符: "):
-            X2.append(featurizer.featurize(smiles)[0])
-        X2 = pd.DataFrame(data=X2)
-        X = pd.concat([X, X2], axis=1)
-    # ECFP
-    if ECFP:
-        X3 = []
-        featurizer = feat.CircularFingerprint(size=2048, radius=4)
-        for smiles in tqdm(SMILES, desc="正在计算ECFP描述符: "):
-            X3.append(featurizer.featurize(smiles)[0])
-        X3 = pd.DataFrame(data=X3)
-        X = pd.concat([X, X3], axis=1)
+    featurizer = feat.MordredDescriptors(ignore_3D=True)
+    X1 = []
+    for smiles in tqdm(SMILES, desc="正在计算Mordred描述符: "):
+        try:
+            # TODO: 保留Mordred的特征名
+            X1.append(featurizer.featurize(smiles)[0])
+        except RuntimeWarning as e:
+            log.error(f"化合物 {smiles} 计算Mordred描述符出现运行时警告: ")
+            log.error(traceback.format_exc())
+    # 将list转换为Dataframe
+    X = pd.DataFrame(data=X1)
+    # X = pd.concat([X, X1], axis=1)
+
+    # 将SMILES与描述符拼接在一起
     if not X.empty:
         df = pd.concat([df, X], axis=1)
         return df
