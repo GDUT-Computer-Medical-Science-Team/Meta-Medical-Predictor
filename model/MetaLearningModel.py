@@ -167,6 +167,7 @@ class MetaLearningModel:
         :return:
         """
         self.model.train()
+
         for iter, batch in enumerate(dataloader):
             meta_valid_loss = 0.0
 
@@ -214,7 +215,7 @@ class MetaLearningModel:
         logger.info("开始进行测试集测试")
         criterion = nn.MSELoss()
         self.model.eval()
-
+        result = list()
         for iter, batch in enumerate(dataloader):
             meta_valid_loss = 0.0
             effective_batch_size = batch[0].shape[0]
@@ -235,3 +236,5 @@ class MetaLearningModel:
 
             meta_valid_loss = meta_valid_loss / effective_batch_size
             logger.info(f'Iteration: {iter} Total Loss: {meta_valid_loss.item()}\n')
+            result.append(meta_valid_loss.item())
+        return np.mean(result), np.std(result)
