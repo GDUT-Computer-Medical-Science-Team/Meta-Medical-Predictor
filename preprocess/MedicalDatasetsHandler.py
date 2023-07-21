@@ -83,18 +83,16 @@ class MedicalDatasetsHandler:
 
     def transform_organ_time_data_to_tensor_dataset(self,
                                                     test_size=0.2,
-                                                    external=False,
+                                                    double_index=False,
                                                     FP=False,
                                                     overwrite=False):
         """
         读取csv浓度数据文件，进行数据预处理，并进行训练集、测试集分割，最后保存为TensorDataset数据集
         :param test_size: 测试集大小，范围为[0.0, 1.0)
-        :param external: 是否是外部训练集
+        :param double_index: 是否是双倍特征筛选量
         :param FP: 是否计算分子指纹
         :param overwrite: 是否覆盖现有的npy文件
         """
-        # 若为验证集则double_index为false，即验证集只需要正常一半的特征
-        double_index = not external
         if test_size < 0.0 or test_size >= 1.0:
             raise ValueError("参数test_size超过范围[0.0, 1.0)")
         npy_file_path = self.__transform_organs_data(FP=FP,
@@ -132,12 +130,17 @@ class MedicalDatasetsHandler:
             if overwrite or not os.path.exists(desc_file):
                 log.info("未找到特征文件，进行特征生成操作")
                 # 计算SMILES的描述符，然后保存到mol_Desc文件中方便再次读取
-                # TODO: 修改PadelpyCall的smi需求，要求能输入smiles
                 if FP:  # 分子指纹
                     finger_prints = ['EState', 'MACCS', 'KlekotaRoth', 'PubChem']
                     log.info(f"生成分子指纹: {finger_prints}")
-                    pc = PadelpyCall(smi_dir="/Data/DL/Datasets/479smiles.smi")
-                    mol_Desc = pc.CalculateFP(finger_prints)
+                    smiles_smi = os.path.join(self.__saving_folder, "smiles.smi")
+                    with open(smiles_smi, 'w', encoding='utf-8') as f:
+                        for smile in smiles.values.tolist():
+                            f.write(smile[0])
+                            f.write("\n")
+                    fp_xml_dir = "preprocess/data_preprocess/fingerprints_xml/*.xml"
+                    pc = PadelpyCall(save_dir=self.__saving_folder, smi_filename=smiles_smi, fp_xml_dir=fp_xml_dir)
+                    mol_Desc = pc.CalculateFP(finger_prints, overwrite=False)
                 else:  # 分子描述符
                     log.info("生成Mordred分子描述符")
                     mol_Desc = calculate_desc(smiles)
@@ -148,8 +151,9 @@ class MedicalDatasetsHandler:
                 log.info(f"存在特征文件{desc_file}，读取数据特征")
                 mol_Desc = pd.read_csv(desc_file)
             log.info("正在执行特征数据归一化处理")
-            # 读取纯特征部分
-            mol_Desc = mol_Desc.iloc[:, 1:]
+            # 读取纯特征部分(Mordred描述符)
+            if not FP:
+                mol_Desc = mol_Desc.iloc[:, 1:]
             # 预处理数据集
             # sc = StandardScaler()
             sc = MinMaxScaler()
@@ -159,51 +163,37 @@ class MedicalDatasetsHandler:
 
             # 保存所有器官的描述符以及浓度数据的总字典
             datasets = {}
-            # 特征提取的列索引，从文件中读取，若不存在则进行特征提取后写入文件中
-            # desc_50_idx_list = []
-            # desc_100_idx_list = []
-            # if os.path.exists(mordred_50_tuned_index):
-            #     desc_50_idx_list = np.load(mordred_50_tuned_index).tolist()
-            #     print("Length of 50 desc list: ", len(desc_50_idx_list))
-            # if os.path.exists(mordred_100_tuned_index):
-            #     desc_100_idx_list = np.load(mordred_100_tuned_index).tolist()
-            #     print("Length of 100 desc list: ", len(desc_100_idx_list))
             log.info("进行特征筛选")
             # 处理每一种器官的浓度数据
-            # print(organs_labels.shape)
             for index, col in tqdm(organs_labels.iteritems(), desc="正在筛选特征: ", total=organs_labels.shape[1]):
                 organ_name = index.split()[0]
                 concentration_data = pd.DataFrame({'Concentration': col})
-                # concentration_data = pd.Series({'Concentration': col})
+                # 去除异常值，将最多占数据集4%的异常值置为0
+                from sklearn.covariance import EllipticEnvelope
+                try:
+                    predictions1 = EllipticEnvelope(contamination=0.04, support_fraction=1)\
+                        .fit_predict(concentration_data.fillna(value=0))
+                    predictions1 = (predictions1 == 1)
+                    concentration_data.loc[~predictions1] = np.nan
+                except ValueError:
+                    log.error(f"器官{organ_name}的标签去异常值存在问题，取消去除异常操作")
+                    log.error(traceback.format_exc())
+
                 """
-                    若特征索引不存在，则进行特征筛选，分别获得50个和100个特征的索引
+                    进行特征筛选，获得50个或者100个特征
                 """
-                # 保存50个筛选特征索引
-                # if len(desc_50_idx_list) == 0:
                 if not double_index:
                     desc_50_idx_list = FeatureExtraction(mol_Desc,
                                                          concentration_data.fillna(value=0),
                                                          RFE_features_to_select=self.__feature_select_number). \
                         feature_extraction(TBE=True, returnIndex=True)
-                    # print("Length of 50 desc list: ", len(desc_50_idx_list))
-                    # np.save(mordred_50_tuned_index, desc_50_idx_list)
                     x = mol_Desc.loc[:, desc_50_idx_list]
                 # 保存100个筛选特征索引
                 else:
-                    # desc_100_idx_list = FeatureExtraction(mol_Desc,
-                    #                                       concentration_data.fillna(value=0),
-                    #                                       RFE_features_to_select=self.__feature_select_number * 2) \
-                    #     .feature_extraction(TBE=True, returnIndex=True)
-                    # x = mol_Desc.loc[:, desc_100_idx_list]
                     x = FeatureExtraction(mol_Desc,
                                           concentration_data.fillna(value=0),
                                           RFE_features_to_select=self.__feature_select_number * 2) \
                         .feature_extraction(TBE=True, returnIndex=False)
-                # if double_index:
-                #     x = mol_Desc.loc[:, desc_100_idx_list]
-                # else:
-                #     x = mol_Desc.loc[:, desc_50_idx_list]
-
                 # 合并SMILES、浓度数据和筛选完成的特征
                 organ_df = pd.concat([smiles, concentration_data, x], axis=1)
                 # 根据浓度数据列的空数据抛弃行数据
