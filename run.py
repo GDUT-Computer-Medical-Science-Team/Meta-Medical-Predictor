@@ -67,19 +67,6 @@ def check_data_exist(merge_filepath, organ_names_list, certain_time,
 
 
 def train_meta_model(target_organ):
-    merge_filepath = "data\\数据表汇总.xlsx"
-    organ_names_list = ['blood', 'bone', 'brain', 'fat', 'heart',
-                        'intestine', 'kidney', 'liver', 'lung', 'muscle',
-                        'pancreas', 'spleen', 'stomach', 'uterus']
-    certain_time = 60
-    train_datasets_dir = "data/train/datasets"
-    test_datasets_dir = "data/test/datasets"
-    overwrite = False
-    # 检查TensorDatasets数据是否存在
-    check_data_exist(merge_filepath, organ_names_list, certain_time,
-                     train_datasets_dir, test_datasets_dir,
-                     FP=True, overwrite=overwrite)
-
     support_batch_size = 64
     query_batch_size = 32
     eval_batch_size = 16
@@ -186,5 +173,19 @@ def train_xgboost(organ_name):
 
 if __name__ == '__main__':
     organ_name = 'brain'
+    merge_filepath = "data\\数据表汇总.xlsx"
+    organ_names_list = ['blood', 'bone', 'brain', 'fat', 'heart',
+                        'intestine', 'kidney', 'liver', 'lung', 'muscle',
+                        'pancreas', 'spleen', 'stomach', 'uterus']
+    certain_time = 60
+    train_datasets_dir = "data/train/datasets"
+    test_datasets_dir = "data/test/datasets"
+    overwrite = False
+    FP = False
+    # 检查TensorDatasets数据是否存在
+    check_data_exist(merge_filepath, organ_names_list, certain_time,
+                     train_datasets_dir, test_datasets_dir,
+                     FP=FP, overwrite=overwrite)
+
     train_meta_model(organ_name)
     train_xgboost(organ_name)
