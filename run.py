@@ -1,3 +1,4 @@
+import datetime
 import os.path
 import time
 import traceback
@@ -8,12 +9,20 @@ from sklearn.metrics import r2_score, mean_squared_error
 from sklearn.model_selection import KFold
 from tqdm import tqdm
 from xgboost.sklearn import XGBRegressor
-
 import utils.datasets_loader as loader
 from model.MetaLearningModel import MetaLearningModel
 from preprocess.MedicalDatasetsHandler import MedicalDatasetsHandler
 from utils.DataLogger import DataLogger
 
+# 初始化结果保存目录
+cur_time = time.localtime()
+result_parent_dir = f"result\\{time.strftime('%Y%m%d', cur_time)}"
+result_dir = f"{result_parent_dir}\\{time.strftime('%H%M%S', cur_time)}"
+if not os.path.exists(result_parent_dir):
+    os.mkdir(result_parent_dir)
+if not os.path.exists(result_dir):
+    os.mkdir(result_dir)
+main_log = DataLogger(f"{result_dir}\\run.log").getlog(disable_console_output=True)
 log = DataLogger().getlog("run")
 
 
@@ -72,14 +81,24 @@ def train_meta_model(target_organ):
     eval_batch_size = 16
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = MetaLearningModel(model_lr=0.002,
-                              maml_lr=0.025,
+    model = MetaLearningModel(model_lr=0.0005,
+                              maml_lr=0.001,
                               dropout_rate=0.2,
                               input_size=50,
                               adaptation_steps=10,
                               hidden_size=64,
                               device=device,
                               seed=int(time.time()))
+    # brain 50 FP
+    # model = MetaLearningModel(model_lr=0.004,
+    #                           maml_lr=0.025,
+    #                           dropout_rate=0.3,
+    #                           input_size=50,
+    #                           adaptation_steps=10,
+    #                           hidden_size=64,
+    #                           device=device,
+    #                           seed=int(time.time()))
+
     # brain 50 MD index
     # model = MetaLearningModel(model_lr=0.003,
     #                           maml_lr=0.025,
@@ -110,9 +129,10 @@ def train_meta_model(target_organ):
                                                eval_batch_size,
                                                device)
     # 模型训练与验证
-    model.train(support_dataloader, query_dataloader)
+    model.train(support_dataloader, query_dataloader, epoches=10)
     mean, sd = model.pred(test_dataloader)
     log.info(f"预测MSE结果平均值为{mean}，方差为{sd}")
+    model.model_save(f"{result_dir}\\model.mdl")
 
 
 def train_xgboost(organ_name):
@@ -133,42 +153,52 @@ def train_xgboost(organ_name):
         'random_state': int(time.time())
     }
 
-    xgb = XGBRegressor(**blood_params)
-    cv_times = 10
-    cv = KFold(n_splits=cv_times, shuffle=True)
-    log.info(f"使用XGBoost模型进行{cv_times}次交叉验证")
-    r2_scores = np.empty(cv_times)
-    rmse_scores = np.empty(cv_times)
-    mse_scores = np.empty(cv_times)
+    # xgb = XGBRegressor(**blood_params)
+    xgb = XGBRegressor()
+    epoches = 10
+    r2_list = []
+    mse_list = []
+    log.info("进行XGBoost模型训练")
+    for epoch in range(epoches):
+        cv_times = 10
+        cv = KFold(n_splits=cv_times, shuffle=True)
+        # log.info(f"使用XGBoost模型进行{cv_times}次交叉验证")
+        r2_scores = np.empty(cv_times)
+        rmse_scores = np.empty(cv_times)
+        mse_scores = np.empty(cv_times)
 
-    for idx, (train_idx, val_idx) in tqdm(enumerate(cv.split(X, y)), desc="交叉验证: ", total=cv_times):
-        X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-        y_train, y_val = y[train_idx], y[val_idx]
+        for idx, (train_idx, val_idx) in tqdm(enumerate(cv.split(X, y)), desc="交叉验证: ", total=cv_times):
+            X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_train, y_val = y[train_idx], y[val_idx]
 
-        xgb.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=100, verbose=False)
-        preds = xgb.predict(X_val)
+            xgb.fit(X_train, y_train, eval_set=[(X_val, y_val)], early_stopping_rounds=100, verbose=False)
+            preds = xgb.predict(X_val)
 
-        r2 = r2_score(y_val, preds)
-        r2_scores[idx] = r2
+            r2 = r2_score(y_val, preds)
+            r2_scores[idx] = r2
 
-        # rmse = np.sqrt(mean_squared_error(y_val, preds))
-        # rmse_scores[idx] = rmse
+            # rmse = np.sqrt(mean_squared_error(y_val, preds))
+            # rmse_scores[idx] = rmse
 
-        mse = mean_squared_error(y_val, preds)
-        mse_scores[idx] = mse
-    log.info("交叉验证训练结果：")
-    log.info(f"R2: {np.mean(r2_scores)}")
-    # log.info(f"RMSE: {np.mean(rmse_scores)}")
-    log.info(f"MSE: {np.mean(mse_scores)}")
+            mse = mean_squared_error(y_val, preds)
+            mse_scores[idx] = mse
+        log.info(f"epoch: {epoch + 1}/{epoches}: 交叉验证训练结果：")
+        log.info(f"\tR2: {np.mean(r2_scores)}")
+        # log.info(f"RMSE: {np.mean(rmse_scores)}")
+        log.info(f"\tMSE: {np.mean(mse_scores)}")
 
-    preds = xgb.predict(X_test)
-    test_r2 = r2_score(y_test, preds)
-    # test_rmse = np.sqrt(mean_squared_error(y_test, preds))
-    test_mse = mean_squared_error(y_test, preds)
-    log.info("测试集测试结果:")
-    log.info(f"R2: {test_r2}")
-    # log.info(f"RMSE: {test_rmse}")
-    log.info(f"MSE: {test_mse}")
+        preds = xgb.predict(X_test)
+        test_r2 = r2_score(y_test, preds)
+        # test_rmse = np.sqrt(mean_squared_error(y_test, preds))
+        test_mse = mean_squared_error(y_test, preds)
+        log.info(f"epoch: {epoch + 1}/{epoches}: 测试集测试结果:")
+        log.info(f"\tR2: {test_r2}")
+        # log.info(f"RMSE: {test_rmse}")
+        log.info(f"\tMSE: {test_mse}")
+        r2_list.append(test_r2)
+        mse_list.append(test_mse)
+    log.info(f"预测R2结果平均值为{np.mean(r2_list)}, 方差为{np.std(r2_list)}")
+    log.info(f"预测MSE结果平均值为{np.mean(mse_list)}, 方差为{np.std(mse_list)}")
 
 
 if __name__ == '__main__':
@@ -177,11 +207,16 @@ if __name__ == '__main__':
     organ_names_list = ['blood', 'bone', 'brain', 'fat', 'heart',
                         'intestine', 'kidney', 'liver', 'lung', 'muscle',
                         'pancreas', 'spleen', 'stomach', 'uterus']
+    # organ_names_list = ['blood', 'brain', 'ratio']
     certain_time = 60
-    train_datasets_dir = "data/train/datasets"
-    test_datasets_dir = "data/test/datasets"
+    train_datasets_dir = "data\\train\\datasets"
+    test_datasets_dir = "data\\test\\datasets"
     overwrite = False
-    FP = False
+    FP = True
+    if FP:
+        log.info("目标特征为：分子指纹")
+    else:
+        log.info("目标特征为：分子描述符")
     # 检查TensorDatasets数据是否存在
     check_data_exist(merge_filepath, organ_names_list, certain_time,
                      train_datasets_dir, test_datasets_dir,

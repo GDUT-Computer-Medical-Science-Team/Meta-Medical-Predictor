@@ -56,7 +56,7 @@ class MetaLearningModel:
         maml = MAML(model, lr=self.maml_lr, first_order=False).to(self.device)
         return maml
 
-    def train(self, support_dataloader, query_dataloader):
+    def train(self, support_dataloader, query_dataloader, epoches=10):
         """
         使用支持集与查询集进行训练
         :param support_dataloader: 支持集数据装载器
@@ -68,7 +68,7 @@ class MetaLearningModel:
         """
             训练集（支持集）
         """
-        self.support_train(support_dataloader, query_dataloader, opt, criterion, self.adaptation_steps)
+        self.support_train(support_dataloader, query_dataloader, opt, criterion, self.adaptation_steps, epoches)
 
         """
             验证集（查询集）
@@ -94,7 +94,7 @@ class MetaLearningModel:
     #         logger.info("\nExternal validation:")
     #         # self.external_eval(external_dataloader, maml, criterion)
 
-    def support_train(self, support_dataloader, query_dataloader, opt, criterion, adaptation_steps):
+    def support_train(self, support_dataloader, query_dataloader, opt, criterion, adaptation_steps, epoches):
         """
         训练maml模型
         :param dataloader: 数据装载器
@@ -104,55 +104,55 @@ class MetaLearningModel:
         :param adaptation_steps: maml自适应步数
         :return:
         """
-
         self.model.train()
-        for iter, batch in enumerate(zip(support_dataloader, cycle(query_dataloader))):  # num_tasks/batch_size
-            meta_valid_loss = 0.0
-            sup_batch, qry_batch = batch[0], batch[1]
+        for epoch in range(epoches):
+            for iter, batch in enumerate(zip(support_dataloader, cycle(query_dataloader))):  # num_tasks/batch_size
+                meta_valid_loss = 0.0
+                sup_batch, qry_batch = batch[0], batch[1]
 
-            learner = self.model.clone()
-            sup_inputs, sup_targets = sup_batch[0].float(), sup_batch[1].float()
-            qry_inputs, qry_targets = qry_batch[0].float(), qry_batch[1].float()
-            for _ in range(adaptation_steps):  # adaptation_steps
-                support_preds = learner(sup_inputs)
-                support_loss = criterion(support_preds, sup_targets)
-                learner.adapt(support_loss)
-            query_preds = learner(qry_inputs)
-            query_loss = criterion(query_preds, qry_targets)
+                learner = self.model.clone()
+                sup_inputs, sup_targets = sup_batch[0].float(), sup_batch[1].float()
+                qry_inputs, qry_targets = qry_batch[0].float(), qry_batch[1].float()
+                for _ in range(adaptation_steps):  # adaptation_steps
+                    support_preds = learner(sup_inputs)
+                    support_loss = criterion(support_preds, sup_targets)
+                    learner.adapt(support_loss)
+                query_preds = learner(qry_inputs)
+                query_loss = criterion(query_preds, qry_targets)
 
-            opt.zero_grad()
-            query_loss.backward()
-            opt.step()
-            # # for each task in the batch
-            # effective_batch_size = batch[0].shape[0]
-            # # effective_batch_size = int(batch[0].shape[0] / 2)
-            # for i in range(effective_batch_size):
-            #     learner = self.model.clone()
-            #
-            #     # divide the data into support and query sets
-            #     train_inputs, train_targets = batch[0][i].float(), batch[1][i].float()
-            #     x_support, y_support = train_inputs[::2], train_targets
-            #     x_query, y_query = train_inputs[1::2], train_targets
-            #     # idx = 2 * i
-            #     # x_support, y_support = batch[0][idx].float(), batch[1][idx].float()
-            #     # x_query, y_query = batch[0][idx + 1].float(), batch[1][idx + 1].float()
-            #
-            #     for _ in range(adaptation_steps):  # adaptation_steps
-            #         support_preds = learner(x_support)
-            #         support_loss = criterion(support_preds, y_support)
-            #         learner.adapt(support_loss)
-            #
-            #     query_preds = learner(x_query)
-            #     query_loss = criterion(query_preds, y_query)
-            #     meta_valid_loss += query_loss
+                opt.zero_grad()
+                query_loss.backward()
+                opt.step()
+                # # for each task in the batch
+                # effective_batch_size = batch[0].shape[0]
+                # # effective_batch_size = int(batch[0].shape[0] / 2)
+                # for i in range(effective_batch_size):
+                #     learner = self.model.clone()
+                #
+                #     # divide the data into support and query sets
+                #     train_inputs, train_targets = batch[0][i].float(), batch[1][i].float()
+                #     x_support, y_support = train_inputs[::2], train_targets
+                #     x_query, y_query = train_inputs[1::2], train_targets
+                #     # idx = 2 * i
+                #     # x_support, y_support = batch[0][idx].float(), batch[1][idx].float()
+                #     # x_query, y_query = batch[0][idx + 1].float(), batch[1][idx + 1].float()
+                #
+                #     for _ in range(adaptation_steps):  # adaptation_steps
+                #         support_preds = learner(x_support)
+                #         support_loss = criterion(support_preds, y_support)
+                #         learner.adapt(support_loss)
+                #
+                #     query_preds = learner(x_query)
+                #     query_loss = criterion(query_preds, y_query)
+                #     meta_valid_loss += query_loss
 
-            # meta_valid_loss = meta_valid_loss / effective_batch_size
+                # meta_valid_loss = meta_valid_loss / effective_batch_size
 
-            if iter is not 0 and iter % 5 == 0:
-                logger.info(f'Iteration: {iter} Meta Train Loss: {query_loss.item()}')
-                for idx, compare in enumerate(zip(query_preds, qry_targets)):
-                    logger.info(f"Index: {idx}:\t{round(compare[0].item(), 2)},"
-                                f"\tground true:\t{round(compare[1].item(), 2)}")
+                if iter is not 0 and iter % 5 == 0:
+                    logger.info(f'Epoch {epoch + 1}/{epoches} Iteration: {iter} Meta Train Loss: {query_loss.item()}')
+                    # for idx, compare in enumerate(zip(query_preds, qry_targets)):
+                    #     logger.info(f"Index: {idx}:\t{round(compare[0].item(), 2)},"
+                    #                 f"\tground true:\t{round(compare[1].item(), 2)}")
 
 
 
@@ -216,25 +216,25 @@ class MetaLearningModel:
         criterion = nn.MSELoss()
         self.model.eval()
         result = list()
-        for iter, batch in enumerate(dataloader):
-            meta_valid_loss = 0.0
-            effective_batch_size = batch[0].shape[0]
+        with torch.no_grad():
+            for iter, batch in enumerate(dataloader):
+                meta_valid_loss = 0.0
+                effective_batch_size = batch[0].shape[0]
 
-            for i in range(effective_batch_size):
-                learner = self.model.clone()
-                # divide the data into support and query sets
-                # train_inputs, train_targets = batch[0][i].float(), batch[1][i].float()
-                # inputs, targets = train_inputs[::2], train_targets
-                inputs, targets = batch[0][i].float(), batch[1][i].float()
+                for i in range(effective_batch_size):
+                    learner = self.model.clone()
+                    # divide the data into support and query sets
+                    # train_inputs, train_targets = batch[0][i].float(), batch[1][i].float()
+                    # inputs, targets = train_inputs[::2], train_targets
+                    inputs, targets = batch[0][i].float(), batch[1][i].float()
 
-                with torch.no_grad():
                     preds = learner(inputs)
                     loss = criterion(preds, targets)
                     logger.info(f"Iteration: {iter} -- Batch {i} preds: {round(preds.item(), 4)}, "
                                 f"ground true: {round(targets.item(), 2)}")
                     meta_valid_loss += loss
 
-            meta_valid_loss = meta_valid_loss / effective_batch_size
-            logger.info(f'Iteration: {iter} Total Loss: {meta_valid_loss.item()}\n')
-            result.append(meta_valid_loss.item())
+                meta_valid_loss = meta_valid_loss / effective_batch_size
+                logger.info(f'Iteration: {iter} Total Loss: {meta_valid_loss.item()}\n')
+                result.append(meta_valid_loss.item())
         return np.mean(result), np.std(result)

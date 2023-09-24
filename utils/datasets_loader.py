@@ -62,7 +62,7 @@ def get_train_datasets(train_datasets_dir, target_organ, support_batch_size, que
     #         raise ValueError("外部数据集未找到")
     #     meta_externalset = MetaDataset(externalset)
 
-    query_dataloader = DataLoader(meta_queryset, batch_size=query_batch_size, shuffle=True)
+    query_dataloader = DataLoader(meta_queryset, batch_size=query_batch_size, shuffle=False)
     support_dataloader = DataLoader(meta_supportset, batch_size=support_batch_size, shuffle=True)
     # if external_validation:
     #     external_dataloader = DataLoader(meta_externalset, batch_size=1, shuffle=True)
@@ -87,7 +87,7 @@ def get_test_datasets(test_datasets_dir, target_organ, batch_size, device):
 
     logger.info(f"测试集数据选择器官 {target_organ}")
 
-    query_dataloader = DataLoader(meta_queryset, batch_size=batch_size, shuffle=True)
+    query_dataloader = DataLoader(meta_queryset, batch_size=batch_size, shuffle=False)
 
     return query_dataloader
 

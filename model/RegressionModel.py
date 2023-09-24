@@ -18,7 +18,7 @@ class RegressionModel(nn.Module):
         self.layer1 = nn.Linear(input_size, n_hidden)
         self.layer2 = nn.Linear(n_hidden, n_hidden)
         self.layer3 = nn.Linear(n_hidden, n_hidden)
-        self.layer4 = nn.Linear(n_hidden, n_hidden)
+        # self.layer4 = nn.Linear(n_hidden, n_hidden)
         self.predict = nn.Linear(n_hidden, output_size)
 
         self.activate = nn.Tanh()
@@ -38,12 +38,12 @@ class RegressionModel(nn.Module):
         out = self.activate(out)
         out = F.dropout(out, p=self.dropoutRate)
 
-        out = self.layer4(out)
-        out = self.activate(out)
-        out = F.dropout(out, p=self.dropoutRate)
+        # out = self.layer4(out)
+        # out = self.activate(out)
+        # out = F.dropout(out, p=self.dropoutRate)
 
-        out = torch.sigmoid(out)
-        # out = torch.tanh(out)
+        # out = torch.sigmoid(out)
+        out = torch.tanh(out)
         out = self.predict(out)
         return out
 #
