@@ -35,7 +35,7 @@ class DataLogger(object):
         self.file_level = file_level
         self.formatter = logging.Formatter(default_formats.get('log_format'))
 
-    def getlog(self, logger_name=None, log_file=None):
+    def getlog(self, logger_name=None, log_file=None, disable_console_output=False):
         """
         获取log对象
         :param logger_name: 指定logger的名字，不指定则默认为root
@@ -45,13 +45,14 @@ class DataLogger(object):
         logger = logging.getLogger(logger_name)
         logger.setLevel(self.logger_level)
         # 设置控制台日志输出格式
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(self.console_level)
-        console_handler.setFormatter(colorlog.ColoredFormatter(fmt=default_formats.get('color_format'),
-                                                               datefmt='%Y-%m-%d %H:%M:%S',
-                                                               log_colors=log_colors_config))
-        logger.addHandler(console_handler)
-        console_handler.close()
+        if not disable_console_output:
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(self.console_level)
+            console_handler.setFormatter(colorlog.ColoredFormatter(fmt=default_formats.get('color_format'),
+                                                                   datefmt='%Y-%m-%d %H:%M:%S',
+                                                                   log_colors=log_colors_config))
+            logger.addHandler(console_handler)
+            console_handler.close()
 
         # 重定向日志文件路径
         if log_file is not None:
