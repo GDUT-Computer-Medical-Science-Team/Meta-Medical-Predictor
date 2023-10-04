@@ -6,7 +6,6 @@ from sklearn.svm import SVC
 from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
 from sklearn.linear_model import LogisticRegression as LR
 from time import time
-import global_config as cfg
 from utils.DataLogger import DataLogger
 import pandas as pd
 import numpy as np

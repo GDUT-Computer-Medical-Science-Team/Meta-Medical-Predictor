@@ -2,7 +2,6 @@ import traceback
 
 import pandas
 
-import global_config as cfg
 import pandas as pd
 import numpy as np
 from deepchem import feat
