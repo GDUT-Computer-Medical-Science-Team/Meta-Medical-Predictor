@@ -2,7 +2,7 @@
 基于元学习的医学数据预测器
 
 ## 代码入口
-实际的代码入口为run.py
+实际的代码入口为run.py，而ratio_xgboost_training.py是用于训练单个xgboost模型来预测脑血比的实验性代码
 
 ## 目录结构
 
