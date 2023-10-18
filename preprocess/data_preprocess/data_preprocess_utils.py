@@ -128,7 +128,7 @@ def save_max_organ_data(root_filepath: str, target_filepath: str, organ_name: st
 
 
 # TODO: 将分子指纹的计算方法改为用PadelpyCall方法
-def calculate_Mordred_desc(datasrc):
+def calculate_Mordred_desc(datasrc, drop_duplicates=False):
     """
     从datasrc中的SMILES计算描述符并返回带描述符的datasrc数据
     :param datasrc: 需要计算的带SMILES的数据源，类型为str（指向数据源的csv文件）或者Dataframe或Series
@@ -146,7 +146,6 @@ def calculate_Mordred_desc(datasrc):
     else:
         SMILES = df
 
-    X = pd.DataFrame()
     featurizer = feat.MordredDescriptors(ignore_3D=True)
     X1 = []
     for smiles in tqdm(SMILES, desc="正在计算Mordred描述符: "):
@@ -162,6 +161,7 @@ def calculate_Mordred_desc(datasrc):
 
     # 将SMILES与描述符拼接在一起
     if not X.empty:
+        X = clean_desc_dataframe(X, drop_duplicates=drop_duplicates)
         df = pd.concat([df, X], axis=1)
         return df
     else:
@@ -206,7 +206,9 @@ def clean_desc_dataframe(df: pd.DataFrame, axis=1, drop_duplicates=True) -> pd.D
     :param drop_duplicates: 是否丢弃重复的行
     :return: 完成清除的Dataframe
     """
-    df = df.replace(["#NAME?", np.inf, -np.inf], np.nan)
+    log.info("执行特征Dataframe预处理")
+    df.replace(["#NAME?", np.inf, -np.inf], np.nan, inplace=True)
+    df.replace("#NUM!", np.nan, inplace=True)
     df = df.dropna(axis=axis)
     if drop_duplicates:
         df = df.drop_duplicates()
