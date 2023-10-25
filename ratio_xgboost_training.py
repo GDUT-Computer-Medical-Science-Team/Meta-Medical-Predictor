@@ -1,5 +1,9 @@
 import sys
+from time import time
+
+import numpy
 import optuna
+from sklearn.preprocessing import MinMaxScaler
 from xgboost.sklearn import XGBRegressor
 import numpy as np
 from sklearn.metrics import mean_squared_error, r2_score
@@ -26,8 +30,9 @@ if __name__ == '__main__':
     smile_column_name = 'SMILES'
     pred_column_name = 'logBB'
     RFE_features_to_select = 50
-    n_optuna_trial = 100
+    n_optuna_trial = 300
     cv_times = 10
+    seed = int(time())
 
     if not os.path.exists(logBB_data_file):
         raise FileNotFoundError("缺失logBB数据集")
@@ -70,7 +75,7 @@ if __name__ == '__main__':
             np.savetxt(logBB_desc_index_file, desc_index, fmt='%s')
             X = X[desc_index]
             log.info(f"特征筛选完成，筛选后的特征矩阵形状为：{X.shape}, 筛选得到的特征索引保存到：{logBB_desc_index_file}")
-        except TypeError as e:
+        except (TypeError, KeyError) as e:
             log.error(e)
             os.remove(logBB_desc_index_file)
             sys.exit()
@@ -80,8 +85,22 @@ if __name__ == '__main__':
         X = X[desc_index]
         log.info(f"读取特征索引完成，筛选后的特征矩阵形状为：{X.shape}")
 
+    # 特征归一化
+    log.info("归一化特征数据")
+    sc = MinMaxScaler()
+    sc.fit(X)
+    X = pd.DataFrame(sc.transform(X))
+
+    # 分割训练集与验证集
+    X, X_val, y, y_val = train_test_split(X, y, random_state=seed, test_size=0.1)
+    # 分割后索引重置，否则训练时KFold出现错误
+    X = X.reset_index()
+    y = y.reset_index(drop=True)
+    X_val = X_val.reset_index()
+    y_val = y_val.reset_index(drop=True)
+
     def objective(trial):
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=seed, test_size=0.1)
         params = {
             'n_estimators': trial.suggest_int('n_estimators', 100, 3000),
             'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.03),
@@ -91,7 +110,7 @@ if __name__ == '__main__':
             'colsample_bytree': trial.suggest_float('colsample_bytree', 0.1, 1.0),
             'reg_alpha': trial.suggest_float('reg_alpha', 1e-5, 1e2),
             'reg_lambda': trial.suggest_float('reg_lambda', 1e-5, 1e2),
-            # 'random_state': 42,
+            'random_state': seed,
             'objective': 'reg:squarederror'  # 回归任务
         }
         model = XGBRegressor(**params)
@@ -112,14 +131,15 @@ if __name__ == '__main__':
     log.info("进行XGBoost调参")
     # study = optuna.create_study(direction='minimize')
     study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=n_optuna_trial)
+    study.optimize(objective, n_jobs=4, n_trials=n_optuna_trial)
 
     log.info(f"最佳参数: {study.best_params}")
     log.info(f"最佳预测结果: {study.best_value}")
 
     model = XGBRegressor(**study.best_params)
-    # model = XGBRegressor(**best_params)
-    cv = KFold(n_splits=cv_times, shuffle=True)
+
+    # 训练集交叉验证训练
+    cv = KFold(n_splits=cv_times, random_state=seed, shuffle=True)
     rmse_result_list = []
     r2_result_list = []
     log.info(f"使用最佳参数进行{cv_times}折交叉验证")
@@ -140,9 +160,22 @@ if __name__ == '__main__':
 
         rmse_result_list.append(rmse)
         r2_result_list.append(r2)
+    log.info(f"随机种子: {seed}")
+    log.info("========训练集结果========")
     log.info(
-        f"交叉验证下的最佳预测RMSE结果: {round(np.mean(rmse_result_list), 3)}+-{round(np.var(rmse_result_list), 3)}")
-    log.info(f"交叉验证下的最佳预测R2结果: {round(np.mean(r2_result_list), 3)}+-{round(np.var(r2_result_list), 3)}")
+        f"RMSE: {round(np.mean(rmse_result_list), 3)}+-{round(np.var(rmse_result_list), 3)}")
+    log.info(f"R2: {round(np.mean(r2_result_list), 3)}+-{round(np.var(r2_result_list), 3)}")
+
+    # 验证集验证
+    y_pred = model.predict(X_val)
+    rmse = np.sqrt(mean_squared_error(y_val, y_pred))
+    r2 = r2_score(y_val, y_pred)
+    log.info("========验证集结果========")
+    log.info(
+        f"RMSE: {round(rmse, 3)}")
+    log.info(f"R2: {round(r2, 3)}")
+
+    # TODO: B3DB验证
 
     model_dump_path = 'logBB_data/xgb.joblib'
     joblib.dump(model, model_dump_path)
