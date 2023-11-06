@@ -80,7 +80,7 @@ class FeatureExtraction:
         X_new = model.transform(X)
         return X_new
 
-    def feature_extraction(self, VT=True, TBE=True, UFE=True, RFE=True, returnIndex=False):
+    def feature_extraction(self, VT=True, TBE=True, UFE=True, RFE=True, returnIndex=False, index_dtype=str):
         """
         连续调用特征筛选方法筛选特征
         :param VT: 是否启用VT方法
@@ -89,6 +89,7 @@ class FeatureExtraction:
         :param RFE: 是否启用RFE方法
         :param returnIndex: 返回筛选完成的列索引而不是数据
         :return: 完成筛选的特征数据或者列索引
+        :param index_dtype: 返回列索引的类型
         """
         X = self.X
         if VT:
@@ -108,7 +109,7 @@ class FeatureExtraction:
             if self.verbose:
                 logger.info(f"X shape after Recursive Feature Elimination: {X.shape}")
         if returnIndex:
-            return self.get_feature_column_index(X, self.X)
+            return self.get_feature_column_index(X, self.X, dtype=index_dtype)
         return X if isinstance(X, pd.DataFrame) else pd.DataFrame(X)
 
     def get_feature_column_index(self, X, origin_X, dtype=str) -> list:

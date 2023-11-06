@@ -30,13 +30,13 @@ if __name__ == '__main__':
     smile_column_name = 'SMILES'
     pred_column_name = 'logBB'
     RFE_features_to_select = 50
-    n_optuna_trial = 300
+    n_optuna_trial = 100
     cv_times = 10
     seed = int(time())
 
     if not os.path.exists(logBB_data_file):
         raise FileNotFoundError("缺失logBB数据集")
-    # 描述符数据文件存在，直接读取
+    # 特征读取或获取
     if os.path.exists(logBB_desc_file):
         log.info("存在特征文件，进行读取")
         df = pd.read_csv(logBB_desc_file, encoding='utf-8')
@@ -59,6 +59,13 @@ if __name__ == '__main__':
         pd.concat([X, y], axis=1).to_csv(logBB_desc_file, encoding='utf-8', index=False)
         X = X.drop(smile_column_name, axis=1)
 
+    # 特征归一化
+    log.info("归一化特征数据")
+    sc = MinMaxScaler()
+    sc.fit(X)
+    X = pd.DataFrame(sc.transform(X))
+
+    # 特征筛选
     if not os.path.exists(logBB_desc_index_file):
         log.info("不存在特征索引文件，进行特征筛选")
         log.info(f"筛选前的特征矩阵形状为：{X.shape}")
@@ -70,9 +77,9 @@ if __name__ == '__main__':
                                         y,
                                         VT_threshold=0.02,
                                         RFE_features_to_select=RFE_features_to_select).
-                      feature_extraction(returnIndex=True))
+                      feature_extraction(returnIndex=True, index_dtype=int))
         try:
-            np.savetxt(logBB_desc_index_file, desc_index, fmt='%s')
+            np.savetxt(logBB_desc_index_file, desc_index, fmt='%d')
             X = X[desc_index]
             log.info(f"特征筛选完成，筛选后的特征矩阵形状为：{X.shape}, 筛选得到的特征索引保存到：{logBB_desc_index_file}")
         except (TypeError, KeyError) as e:
@@ -81,15 +88,9 @@ if __name__ == '__main__':
             sys.exit()
     else:
         log.info("存在特征索引文件，进行读取")
-        desc_index = np.loadtxt(logBB_desc_index_file, dtype=str).tolist()
+        desc_index = np.loadtxt(logBB_desc_index_file, dtype=int, delimiter=',').tolist()
         X = X[desc_index]
         log.info(f"读取特征索引完成，筛选后的特征矩阵形状为：{X.shape}")
-
-    # 特征归一化
-    log.info("归一化特征数据")
-    sc = MinMaxScaler()
-    sc.fit(X)
-    X = pd.DataFrame(sc.transform(X))
 
     # 分割训练集与验证集
     X, X_val, y, y_val = train_test_split(X, y, random_state=seed, test_size=0.1)
@@ -99,6 +100,7 @@ if __name__ == '__main__':
     X_val = X_val.reset_index()
     y_val = y_val.reset_index(drop=True)
 
+    # 模型调参
     def objective(trial):
         X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=seed, test_size=0.1)
         params = {
@@ -130,12 +132,14 @@ if __name__ == '__main__':
 
     log.info("进行XGBoost调参")
     # study = optuna.create_study(direction='minimize')
+    # 最大化R2结果
     study = optuna.create_study(direction='maximize')
     study.optimize(objective, n_jobs=4, n_trials=n_optuna_trial)
 
     log.info(f"最佳参数: {study.best_params}")
     log.info(f"最佳预测结果: {study.best_value}")
 
+    # 最优参数投入使用
     model = XGBRegressor(**study.best_params)
 
     # 训练集交叉验证训练
@@ -148,7 +152,7 @@ if __name__ == '__main__':
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_train, y_test = y[train_idx], y[test_idx]
         # 训练模型
-        model.fit(X_train, y_train)
+        model.fit(X_train, y_train, eval_set=[(X_test, y_test)], early_stopping_rounds=100, verbose=False)
 
         # 在测试集上进行预测
         y_pred = model.predict(X_test)
