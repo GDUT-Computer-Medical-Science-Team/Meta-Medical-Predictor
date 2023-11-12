@@ -1,7 +1,6 @@
 import sys
 from time import time
 
-import numpy
 import optuna
 from sklearn.preprocessing import MinMaxScaler
 from xgboost.sklearn import XGBRegressor
@@ -32,6 +31,7 @@ if __name__ == '__main__':
     RFE_features_to_select = 50
     n_optuna_trial = 100
     cv_times = 10
+    n_optuna_threads = 2
     seed = int(time())
 
     if not os.path.exists(logBB_data_file):
@@ -134,7 +134,7 @@ if __name__ == '__main__':
     # study = optuna.create_study(direction='minimize')
     # 最大化R2结果
     study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_jobs=4, n_trials=n_optuna_trial)
+    study.optimize(objective, n_jobs=n_optuna_threads, n_trials=n_optuna_trial)
 
     log.info(f"最佳参数: {study.best_params}")
     log.info(f"最佳预测结果: {study.best_value}")
